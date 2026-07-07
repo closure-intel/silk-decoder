@@ -1,35 +1,21 @@
 # ROADMAP
 
-Decoding works today: WeChat/SILK v3 → PCM/WAV via the vendored Skype SILK SDK, exercised by a
-bit-exact conformance vector. What remains is hardening and integration.
+Decoding works and is verified: WeChat/SILK v3 → PCM/WAV via the vendored Skype SILK SDK, with a
+bit-exact conformance vector, and the vendored source checked for provenance and safety
+(see `PROVENANCE.md`). What's left is optional polish.
 
-## Provenance hardening — DONE (2026-07-06)
+## Possible future work
 
-- **Cross-mirror byte-diff:** 105/110 files byte-identical to two independent SDK uploads by
-  different authors; the 5 differences are benign (decode path matches an independent copy). ✅
-- **Security scan:** zero network/exec/file-I/O, no unsafe string funcs, Semgrep C+CWE 0 findings. ✅
+- **More conformance vectors** — add `.silk`/`.pcm` pairs covering more cases (different bitrates,
+  VAD on/off, longer notes, other SILK v3 sources like QQ) to widen the regression net.
+- **Decoder-only slimming** — `vendor/silk/src` currently includes the SDK's encoder sources too
+  (the SDK ships one tree; they compile but are unused). Could vendor decoder-only sources for a
+  smaller build, after confirming exactly which files the decoder links and re-running conformance.
+- **CodeQL C pass in CI** — Semgrep's OSS C coverage is thin; a CodeQL analysis would add deeper
+  memory-safety checking if we want it.
 
-Full results in `PROVENANCE.md`. Optional future depth: a CodeQL C pass in CI.
+## Non-issues
 
-## Optional slimming
-
-`vendor/silk/src` currently includes the SDK's encoder sources too (the SDK ships one tree).
-They're harmless and compiled-but-unused. If we want a smaller build we can vendor decoder-only
-sources — but only after establishing which files the decoder links, and re-running conformance.
-
-## Coverage
-
-The decoder is source-agnostic: any SILK v3 stream decodes, so QQ/other SILK v3 voice works too,
-not just WeChat. Add more conformance vectors (different bitrates, VAD on/off, longer notes) as we
-encounter them.
-
-## Performance
-
-Native C; a multi-second voice note decodes in well under a second. If profiling on real UFDR
-volumes ever shows a bottleneck, it's already in C — no action expected.
-
-## Integration (in backend-service, separate repo)
-
-Swap the POC's `pilk.decode(...)` in `_decode_silk_to_pcm_wav` for a direct import of this
-package (`silk_decoder.decode_to_wav`), and drop the `pilk` dependency. Everything downstream
-(WAV → ffmpeg → transcription/diarization) is unchanged and already proven.
+- **Performance** — native C; a multi-second note decodes in well under a second.
+- **Python version** — pure-Python API + a from-source C extension, so it tracks whatever Python
+  it's built against (3.14+).
