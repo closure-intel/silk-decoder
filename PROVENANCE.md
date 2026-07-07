@@ -33,10 +33,22 @@ Done:
   conformance vector (`vectors/wechat_tone_2s_24k.silk`) decodes to exactly 48000 samples @
   24 kHz (2.00 s), and `tests/conformance/` asserts byte-for-byte reproduction.
 
-Remaining before this is relied on in production (tracked in `ROADMAP.md`):
-- **Independent cross-mirror byte-diff** — confirm `vendor/silk/src` is byte-identical to at
-  least one *independent* SDK upload, so no single mirror could have tampered with it.
-- **Static/security scan** — run Semgrep/CodeQL (C) over `vendor/silk/`.
+- **Independent cross-mirror byte-diff (2026-07-06)** — compared `vendor/silk/src` against two
+  independent SDK uploads by *different authors* (`github.com/foyoux/pilk` and
+  `github.com/ploverlake/silk` v1.0.9). With line endings normalized, **105/110 files are
+  byte-identical across all three copies**. The 5 that differ are benign and none is a
+  suspicious ours-only change: `dec_API.c` (the decode entry point) matches `pilk` byte-for-byte;
+  `enc_API.c` matches `ploverlake`; `NSQ.c` / `NSQ_del_dec.c` / `ana_filt_bank_1.c` differ only by
+  explicit-parenthesis / explicit-cast compiler-warning fixes (numerically identical) and are
+  encoder-side files the decoder never calls. Independent copies agreeing = genuine unmodified SDK.
+- **Security scan (2026-07-06)** — behavioral audit of `vendor/silk/` found **zero** network,
+  process/exec, and file/env-I/O calls (a pure DSP codec, as expected); no unsafe string
+  functions (`gets`/`strcpy`/`strcat`/`sprintf`/`scanf`); Semgrep C + CWE-top-25 packs (218 rules,
+  5 applicable to C) reported **0 findings** across all 138 files. The only IP-shaped literal is
+  the SDK version string `"1.0.9.6"`.
+
+Optional future depth: Semgrep's OSS C coverage is thin (5 rules); a CodeQL C analysis in CI
+would add deeper memory-safety checking if we ever want it.
 
 ## We do not use `pilk` / `pysilk`
 

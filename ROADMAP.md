@@ -3,14 +3,13 @@
 Decoding works today: WeChat/SILK v3 → PCM/WAV via the vendored Skype SILK SDK, exercised by a
 bit-exact conformance vector. What remains is hardening and integration.
 
-## Provenance hardening (before production reliance)
+## Provenance hardening — DONE (2026-07-06)
 
-- **Independent cross-mirror byte-diff** of `vendor/silk/src` against at least one other SDK
-  upload, to prove no single mirror tampered with it. (First alternate mirror tried was gone;
-  pick another SDK source and diff.)
-- **Static/security scan** (Semgrep / CodeQL C) over `vendor/silk/`, recorded in the PR.
+- **Cross-mirror byte-diff:** 105/110 files byte-identical to two independent SDK uploads by
+  different authors; the 5 differences are benign (decode path matches an independent copy). ✅
+- **Security scan:** zero network/exec/file-I/O, no unsafe string funcs, Semgrep C+CWE 0 findings. ✅
 
-See `PROVENANCE.md` for what's already verified (license headers intact; correct decode).
+Full results in `PROVENANCE.md`. Optional future depth: a CodeQL C pass in CI.
 
 ## Optional slimming
 
