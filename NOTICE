@@ -1,0 +1,12 @@
+silk-decoder
+Copyright (c) 2026 Closure Intel
+
+This product includes the Skype SILK SDK reference decoder, vendored under
+vendor/silk/ and used to decode SILK v3 audio.
+
+    SILK Speech Codec SDK
+    Copyright (c) 2006-2012, Skype Limited. All rights reserved.
+    Licensed under the BSD 3-Clause License.
+
+The original Skype BSD license header is retained verbatim in every vendored
+source file. See vendor/silk/src/*.c and PROVENANCE.md for details.

@@ -1,57 +1,31 @@
-"""Top-level SILK decode pipeline: container -> per-frame signal decode -> PCM -> WAV.
+"""Top-level SILK decode pipeline: container -> native decode -> PCM -> WAV.
 
-The container framing (:mod:`silk_decoder.container`) and WAV output (:mod:`silk_decoder.wav`)
-are complete and tested. The per-frame **signal decode** — the actual SILK DSP — is built and
-validated stage-by-stage against reference test vectors (see ``ROADMAP.md`` and
-``tests/conformance/``); until a stage lands it raises :class:`SilkDecodeNotImplemented` rather
-than emitting anything that could be mistaken for a real decode.
-
-The SILK decoder (RFC 6716 §4 / Skype SILK SDK) is a sequence of well-defined stages, each
-independently testable against the reference:
-
-    1. Range (entropy) decoder — read symbols from the arithmetic-coded bitstream.
-    2. Frame header — VAD/LBRR flags, per-frame gains, signal type, quantization offset.
-    3. NLSF decode — stage-1 vector-quantized codebook + stage-2 residual → LSF → LPC coeffs.
-    4. Long-term prediction — pitch lags + 5-tap LTP filter coefficients (voiced frames).
-    5. Excitation — shell-coded pulse locations, LSBs, signs, seed/dither (LCG).
-    6. Synthesis — LTP + short-term (LPC) synthesis filters, gain application.
-    7. Resample — SILK internal rate → requested output rate (24 kHz for WeChat).
+Container framing (:mod:`silk_decoder.container`) is parsed in Python; the per-frame signal
+decode is performed by the native :mod:`silk_decoder._silk` extension, which drives the
+vendored Skype SILK SDK reference decoder (see ``vendor/silk/`` and ``PROVENANCE.md``). WAV
+output is :mod:`silk_decoder.wav`.
 """
 
 from silk_decoder.container import parse_silk_container
-from silk_decoder.errors import SilkDecodeNotImplemented
+from silk_decoder.errors import SilkDecodeError
 from silk_decoder.wav import pcm_s16le_to_wav
 
 #: WeChat voice notes are mono and the SILK bitstream carries no playback rate, so we decode
-#: at WeChat's canonical rate. (Kept identical to the value proven in the Closure POC.)
+#: at WeChat's canonical rate unless the caller overrides it.
 DEFAULT_SAMPLE_RATE = 24000
 
 
-class SilkFrameDecoder:
-    """Stateful decoder for a single SILK stream (state persists across frames).
-
-    Instantiated once per file; :meth:`decode_frame` is called for each container frame in
-    order because inter-frame state (previous LPC/LTP, gains, resampler memory) carries over.
-    """
-
-    def __init__(self, *, sample_rate: int) -> None:
-        """
-        :param sample_rate: Target output sample rate in Hz.
-        """
-        self.sample_rate = sample_rate
-
-    def decode_frame(self, *, payload: bytes) -> bytes:
-        """Decode one SILK frame payload to signed-16-bit LE mono PCM.
-
-        :param payload: One frame's raw SILK bitstream (from the container parser).
-        :returns: Decoded PCM for this frame.
-        :raises SilkDecodeNotImplemented: While the DSP core is still being built + validated.
-        """
-        raise SilkDecodeNotImplemented(
-            "SILK signal decode is not implemented yet. Container parsing and WAV output are "
-            "complete and tested; the DSP core is being implemented and validated bit-exact "
-            "against reference vectors — see ROADMAP.md and tests/conformance/."
-        )
+def _native():
+    """Import the compiled extension, with a clear error if it hasn't been built."""
+    try:
+        from silk_decoder import _silk
+    except ImportError as exc:
+        raise SilkDecodeError(
+            "the native SILK extension (silk_decoder._silk) is not built — "
+            "install the package ('pip install .') or build in place "
+            "('python setup.py build_ext --inplace')"
+        ) from exc
+    return _silk
 
 
 def decode_to_pcm(*, data: bytes, sample_rate: int = DEFAULT_SAMPLE_RATE) -> bytes:
@@ -60,13 +34,16 @@ def decode_to_pcm(*, data: bytes, sample_rate: int = DEFAULT_SAMPLE_RATE) -> byt
     :param data: Raw ``.silk`` file bytes (with or without WeChat's ``0x02`` prefix).
     :param sample_rate: Target output rate in Hz.
     :returns: Concatenated PCM for every frame.
+    :raises InvalidSilkFile: If the input is not a SILK v3 stream.
+    :raises TruncatedSilkFile: If a frame runs past the end of the data.
+    :raises SilkDecodeError: If the native decoder fails or is not built.
     """
     container = parse_silk_container(data=data)
-    decoder = SilkFrameDecoder(sample_rate=sample_rate)
-    pcm = bytearray()
-    for frame in container.frames:
-        pcm += decoder.decode_frame(payload=frame)
-    return bytes(pcm)
+    silk = _native()
+    try:
+        return silk.decode_frames(container.frames, sample_rate)
+    except silk.SilkNativeError as exc:
+        raise SilkDecodeError(str(exc)) from exc
 
 
 def decode_to_wav(*, data: bytes, sample_rate: int = DEFAULT_SAMPLE_RATE) -> bytes:

@@ -1,60 +1,36 @@
-# ROADMAP — SILK signal-decode core
+# ROADMAP
 
-The container framing, WAV output, and API are done and tested. This document tracks the
-remaining work: the SILK **signal decoder** itself, and how we make an in-house codec
-trustworthy enough for forensic evidence.
+Decoding works today: WeChat/SILK v3 → PCM/WAV via the vendored Skype SILK SDK, exercised by a
+bit-exact conformance vector. What remains is hardening and integration.
 
-## Guiding rule
+## Provenance hardening (before production reliance)
 
-A speech codec that "runs" but is subtly wrong produces audio that mis-transcribes — worse than
-no decode at all in a case file. So **every stage is validated bit-exact against the reference
-before we trust it**, and an unimplemented stage raises `SilkDecodeNotImplemented` rather than
-emitting silence or garbage.
+- **Independent cross-mirror byte-diff** of `vendor/silk/src` against at least one other SDK
+  upload, to prove no single mirror tampered with it. (First alternate mirror tried was gone;
+  pick another SDK source and diff.)
+- **Static/security scan** (Semgrep / CodeQL C) over `vendor/silk/`, recorded in the PR.
 
-## Validation strategy (do this first)
+See `PROVENANCE.md` for what's already verified (license headers intact; correct decode).
 
-1. **Obtain reference vectors as a development-time oracle.** For a set of real/synthetic
-   `.silk` inputs, produce known-good signed-16-bit LE mono `.pcm` using the *reference* decoder
-   (the RFC 6716 / Skype SILK reference), and commit `<name>.silk` + `<name>.pcm` pairs to
-   `vectors/`. The reference is used **only** to generate oracle output at dev time — it is never
-   a runtime dependency and never shipped.
-2. `tests/conformance/` already compares our output to those pairs byte-for-byte. Green
-   conformance on a representative corpus (multiple bitrates, VAD on/off, voiced/unvoiced,
-   silence, max-length) is the definition of "done" for each stage.
-3. This also answers the security question directly: correctness is proven against the
-   published standard, not asserted.
+## Optional slimming
 
-## DSP stages (RFC 6716 §4 / Skype SILK SDK), each landed + vector-validated in order
+`vendor/silk/src` currently includes the SDK's encoder sources too (the SDK ships one tree).
+They're harmless and compiled-but-unused. If we want a smaller build we can vendor decoder-only
+sources — but only after establishing which files the decoder links, and re-running conformance.
 
-1. **Range (entropy) decoder** — `icdf`-driven arithmetic decoding; the primitive every later
-   stage reads through. Validate against hand-computed symbol sequences + a captured frame.
-2. **Frame header** — VAD flags, LBRR flags, per-frame signal type & quantization offset type.
-3. **Gains** — log-gain indices → linear quantized gains (with inter-frame delta coding).
-4. **NLSF → LPC** — stage-1 codebook index + stage-2 residual, backward prediction,
-   stabilization, and LSF→LPC conversion; plus LSF interpolation between subframes.
-5. **LTP (voiced)** — pitch lag (primary + contour) and 5-tap LTP filter coefficient codebooks.
-6. **Excitation** — shell coder: pulse counts/locations, LSBs, signs, and the LCG seed/dither.
-7. **Synthesis + resample** — LTP and short-term (LPC) synthesis filters, gain application,
-   subframe overlap/state carry, then resample from the SILK internal rate to the requested
-   output rate (24 kHz for WeChat).
+## Coverage
 
-## Constant tables
-
-SILK needs sizeable normative lookup tables (NLSF codebooks, pitch-contour tables, shell-coder
-`icdf`s, etc.). These will be transcribed from the RFC/reference into `tables.py` and checked by
-(a) shape/sum assertions and (b) the conformance vectors — a wrong table shows up immediately as
-a vector mismatch.
+The decoder is source-agnostic: any SILK v3 stream decodes, so QQ/other SILK v3 voice works too,
+not just WeChat. Add more conformance vectors (different bitrates, VAD on/off, longer notes) as we
+encounter them.
 
 ## Performance
 
-Pure Python is expected to be fine for the workload (voice notes are seconds long, decoded once
-in the async worker pool). If profiling on real UFDR volumes shows it's too slow, the hot inner
-loops (range decoder, LPC/LTP synthesis) are the candidates to move to a small Rust/Cython
-extension later — the API and vectors stay identical, so that optimization is transparent.
+Native C; a multi-second voice note decodes in well under a second. If profiling on real UFDR
+volumes ever shows a bottleneck, it's already in C — no action expected.
 
-## Integration (separate from this repo)
+## Integration (in backend-service, separate repo)
 
-Once conformance is green, the Closure worker swaps its POC `pilk.decode(...)` call for a direct
-import of this package inside `_decode_silk_to_pcm_wav` (`backend-service` is already Python 3.14,
-and this package is pure Python, so it's a plain dependency — no subprocess); everything
-downstream (WAV → ffmpeg → transcription/diarization) is unchanged and already proven.
+Swap the POC's `pilk.decode(...)` in `_decode_silk_to_pcm_wav` for a direct import of this
+package (`silk_decoder.decode_to_wav`), and drop the `pilk` dependency. Everything downstream
+(WAV → ffmpeg → transcription/diarization) is unchanged and already proven.

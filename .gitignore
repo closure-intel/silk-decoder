@@ -18,3 +18,6 @@ venv/
 
 # Reference PCM oracles are fine to commit; large generated audio scratch is not.
 *.wav
+
+# Built native extensions (compiled at install; platform-specific)
+*.so

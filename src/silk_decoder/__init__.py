@@ -1,23 +1,20 @@
 """In-house WeChat/Skype SILK (``.silk``) voice-note decoder.
 
-Pure Python, standard-library only — deliberately no third-party codec packages
-(no ``pilk`` / ``pysilk`` / unmaintained wrappers). See ``README.md`` for the trust and
-provenance rationale, and ``ROADMAP.md`` for the status of the DSP core.
+Decoding is done by a small native extension around the **vendored Skype SILK SDK
+reference decoder** (``vendor/silk/``, BSD-3-Clause) — deliberately not the unmaintained
+``pilk`` / ``pysilk`` PyPI wrappers. See ``README.md`` for the trust/provenance rationale
+and ``PROVENANCE.md`` for the exact source + verification.
 
 Public API::
 
     from silk_decoder import decode_to_wav, decode_to_pcm, parse_silk_container
-
-Container parsing and WAV output are complete and tested; the SILK signal-decode core is
-being implemented and validated bit-exact against reference vectors (until then, decode
-calls raise :class:`SilkDecodeNotImplemented`).
 """
 
 from silk_decoder.container import SilkContainer, parse_silk_container, read_silk_file
-from silk_decoder.decoder import DEFAULT_SAMPLE_RATE, SilkFrameDecoder, decode_to_pcm, decode_to_wav
+from silk_decoder.decoder import DEFAULT_SAMPLE_RATE, decode_to_pcm, decode_to_wav
 from silk_decoder.errors import (
     InvalidSilkFile,
-    SilkDecodeNotImplemented,
+    SilkDecodeError,
     SilkError,
     TruncatedSilkFile,
 )
@@ -29,9 +26,8 @@ __all__ = [
     "DEFAULT_SAMPLE_RATE",
     "InvalidSilkFile",
     "SilkContainer",
-    "SilkDecodeNotImplemented",
+    "SilkDecodeError",
     "SilkError",
-    "SilkFrameDecoder",
     "TruncatedSilkFile",
     "decode_to_pcm",
     "decode_to_wav",

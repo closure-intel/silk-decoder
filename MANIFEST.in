@@ -1,0 +1,5 @@
+# The native extension compiles the vendored Skype SILK SDK. setuptools auto-adds the
+# Extension's .c *sources* to the sdist, but NOT the .h headers they #include — without
+# these the wheel-from-sdist build fails with "SKP_Silk_SDK_API.h: No such file". Include
+# every vendored C source and header so a source/sdist build is self-contained.
+recursive-include vendor *.c *.h
