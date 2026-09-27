@@ -33,9 +33,9 @@ The extension builds from source, so it works against whatever Python it's insta
 ```python
 from silk_decoder import decode_to_wav, decode_to_pcm, parse_silk_container
 
-wav  = decode_to_wav(data=open("voice.silk", "rb").read())          # complete WAV
-pcm  = decode_to_pcm(data=open("voice.silk", "rb").read())          # raw s16le mono PCM
-info = parse_silk_container(data=open("voice.silk", "rb").read())   # framing/inspection only
+wav = decode_to_wav(data=open("voice.silk", "rb").read())  # complete WAV
+pcm = decode_to_pcm(data=open("voice.silk", "rb").read())  # raw s16le mono PCM
+info = parse_silk_container(data=open("voice.silk", "rb").read())  # framing/inspection only
 ```
 
 Defaults to 24 kHz mono (WeChat's rate); pass `sample_rate=` to override.
