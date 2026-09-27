@@ -17,8 +17,10 @@ from urllib.request import urlopen
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
+PROVENANCE_COMMIT = re.compile(r"pinned at commit\s+`([0-9a-f]{40})`")
 
-def python_packages(project, inspection):
+
+def python_packages(*, project, inspection):
     installed = {canonicalize_name(p["metadata"]["name"]): p["metadata"] for p in inspection["installed"]}
     own_name = canonicalize_name(project["project"]["name"])
     environment = inspection["environment"]
@@ -26,7 +28,7 @@ def python_packages(project, inspection):
     direct = set()
     edges = {name: set() for name in installed}
 
-    def visit(requirements, is_runtime):
+    def visit(*, requirements, is_runtime):
         pending = [(Requirement(r), {""}, None) for r in requirements]
         seen = set()
         while pending:
@@ -48,10 +50,10 @@ def python_packages(project, inspection):
             seen.add((name, extras))
             pending.extend((Requirement(r), extras, name) for r in installed[name].get("requires_dist", []))
 
-    visit(project["project"].get("dependencies", []), True)
-    visit(project["build-system"]["requires"], False)
-    visit(project["project"].get("optional-dependencies", {}).get("dev", []), False)
-    visit(["pip"], False)
+    visit(requirements=project["project"].get("dependencies", []), is_runtime=True)
+    visit(requirements=project["build-system"]["requires"], is_runtime=False)
+    visit(requirements=project["project"].get("optional-dependencies", {}).get("dev", []), is_runtime=False)
+    visit(requirements=["pip"], is_runtime=False)
     installed.pop(own_name, None)
     purls = {name: f"pkg:pypi/{name}@{quote(p['version'], safe='')}" for name, p in installed.items()}
     return {
@@ -65,9 +67,9 @@ def python_packages(project, inspection):
     }
 
 
-def verified_sdk(root):
+def verified_sdk(*, root):
     provenance = (root / "PROVENANCE.md").read_text()
-    match = re.search(r"pinned at commit\s+`([0-9a-f]{40})`", provenance)
+    match = PROVENANCE_COMMIT.search(provenance)
     if not match:
         raise ValueError("PROVENANCE.md must identify the vendored SDK commit")
     commit = match[1]
@@ -128,12 +130,12 @@ def main():
             "pyproject.toml": {
                 "name": "pyproject.toml",
                 "file": {"source_location": "pyproject.toml"},
-                "resolved": python_packages(project, inspection),
+                "resolved": python_packages(project=project, inspection=inspection),
             },
             "vendor/silk": {
                 "name": "vendor/silk",
                 "file": {"source_location": "PROVENANCE.md"},
-                "resolved": verified_sdk(root),
+                "resolved": verified_sdk(root=root),
             },
         },
     }

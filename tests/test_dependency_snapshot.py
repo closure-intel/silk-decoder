@@ -35,7 +35,7 @@ def test_runtime_extras_and_build_tools_have_distinct_scopes():
         "environment": {"sys_platform": "linux"},
         "installed": [{"metadata": {"name": name, "version": "1.0", "requires_dist": deps}} for name, deps in packages],
     }
-    actual = snapshot.python_packages(project, inspection)
+    actual = snapshot.python_packages(project=project, inspection=inspection)
     assert "pkg:pypi/silk-decoder@1.0" not in actual
     assert actual["pkg:pypi/runtime@1.0"]["dependencies"] == ["pkg:pypi/child@1.0"]
     assert actual["pkg:pypi/child@1.0"]["scope"] == "runtime"
@@ -43,13 +43,13 @@ def test_runtime_extras_and_build_tools_have_distinct_scopes():
     assert actual["pkg:pypi/setuptools@1.0"]["scope"] == "development"
     inspection["installed"] = [p for p in inspection["installed"] if p["metadata"]["name"] != "child"]
     with pytest.raises(ValueError, match="missing.*child"):
-        snapshot.python_packages(project, inspection)
+        snapshot.python_packages(project=project, inspection=inspection)
 
 
 def test_sdk_without_pinned_provenance_is_rejected(tmp_path):
     (tmp_path / "PROVENANCE.md").write_text("No upstream commit")
     with pytest.raises(ValueError, match="must identify"):
-        snapshot.verified_sdk(tmp_path)
+        snapshot.verified_sdk(root=tmp_path)
 
 
 def test_sdk_modified_or_missing_files_are_rejected(tmp_path, monkeypatch):
@@ -65,10 +65,10 @@ def test_sdk_modified_or_missing_files_are_rejected(tmp_path, monkeypatch):
         entry.size = len(content)
         tar.addfile(entry, io.BytesIO(content))
     monkeypatch.setattr(snapshot, "urlopen", lambda *args, **kwargs: io.BytesIO(archive.getvalue()))
-    assert len(snapshot.verified_sdk(tmp_path)) == 1
+    assert len(snapshot.verified_sdk(root=tmp_path)) == 1
     (sdk / "decoder.c").write_bytes(b"modified")
     with pytest.raises(ValueError, match="differ"):
-        snapshot.verified_sdk(tmp_path)
+        snapshot.verified_sdk(root=tmp_path)
     (sdk / "decoder.c").unlink()
     with pytest.raises(ValueError, match="differ"):
-        snapshot.verified_sdk(tmp_path)
+        snapshot.verified_sdk(root=tmp_path)
