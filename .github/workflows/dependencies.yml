@@ -63,22 +63,76 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat > verify_export.py <<'PY'
+          cat > export_sbom.py <<'PY'
           import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          API_ROOT = "https://api.github.com"
+          repo = os.environ["GITHUB_REPOSITORY"]
+          headers = {
+              "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2026-03-10",
+          }
           snapshot = json.load(open("evidence/snapshot.json"))
           expected = {p["package_url"] for m in snapshot["manifests"].values() for p in m["resolved"].values()}
-          sbom = json.load(open("evidence/sbom.json"))["sbom"]
-          actual = {r["referenceLocator"] for p in sbom["packages"] for r in p.get("externalRefs", []) if r.get("referenceType") == "purl"}
-          relevant = {p for p in actual if p.startswith(("pkg:pypi/", "pkg:github/kn007/silk-v3-decoder@"))}
-          assert relevant == expected, "SBOM does not yet match the submitted package versions"
+
+          def api_request(path):
+              request = urllib.request.Request(f"{API_ROOT}/repos/{repo}/{path}", headers=headers)
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      return response.status, response.read()
+              except urllib.error.HTTPError as error:
+                  return error.code, error.read()
+
+          def load_sbom(payload):
+              document = json.loads(payload)
+              return document.get("sbom", document)
+
+          def relevant_purls(sbom):
+              actual = {
+                  ref["referenceLocator"]
+                  for package in sbom["packages"]
+                  for ref in package.get("externalRefs", [])
+                  if ref.get("referenceType") == "purl"
+              }
+              return {p for p in actual if p.startswith(("pkg:pypi/", "pkg:github/kn007/silk-v3-decoder@"))}
+
+          def fetch_report(sbom_uuid):
+              request = urllib.request.Request(
+                  f"{API_ROOT}/repos/{repo}/dependency-graph/sbom/fetch-report/{sbom_uuid}",
+                  headers=headers,
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      return load_sbom(response.read())
+              except urllib.error.HTTPError as error:
+                  if error.code in {201, 202}:
+                      return None
+                  raise
+
+          for attempt in range(1, 13):
+              status, generated = api_request("dependency-graph/sbom/generate-report")
+              if status != 201:
+                  raise SystemExit(f"generate-report failed with HTTP {status}: {generated!r}")
+              sbom_uuid = json.loads(generated)["sbom_url"].rstrip("/").rsplit("/", 1)[-1]
+              sbom = None
+              for _ in range(30):
+                  sbom = fetch_report(sbom_uuid=sbom_uuid)
+                  if sbom is not None:
+                      break
+                  time.sleep(2)
+              if sbom is not None and relevant_purls(sbom=sbom) == expected:
+                  json.dump({"sbom": sbom}, open("evidence/sbom.json", "w"), indent=2)
+                  raise SystemExit(0)
+              if attempt == 12:
+                  raise SystemExit("SBOM does not yet match the submitted package versions")
+              time.sleep(10)
           PY
-          for attempt in $(seq 1 12); do
-            if gh api "repos/${GITHUB_REPOSITORY}/dependency-graph/sbom" > evidence/sbom.json; then
-              python verify_export.py && break
-            fi
-            if [ "$attempt" -eq 12 ]; then exit 1; fi
-            sleep 10
-          done
+          python export_sbom.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dependency-sbom
