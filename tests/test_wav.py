@@ -13,7 +13,7 @@ from silk_decoder.wav import pcm_s16le_to_wav
 
 
 def test_wav_header_is_wellformed_and_roundtrips() -> None:
-    pcm = bytes(range(0, 256)) * 4  # 1024 bytes = 512 s16 samples
+    pcm = bytes(range(256)) * 4  # 1024 bytes = 512 s16 samples
     wav = pcm_s16le_to_wav(pcm=pcm, sample_rate=24000)
 
     assert wav[:4] == b"RIFF"
